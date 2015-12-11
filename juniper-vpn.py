@@ -151,6 +151,8 @@ class juniper_vpn(object):
                 return 'key'
             elif form.name == 'frmConfirmation':
                 return 'continue'
+            elif form.name == 'frm':
+                break
             else:
                 raise Exception('Unknown form type:', form.name)
         return 'tncc'
