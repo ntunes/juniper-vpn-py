@@ -2,10 +2,11 @@
 # -*- coding: utf-8 -*-
 
 import subprocess
+import sys,logging
 import mechanize
+import re
 import cookielib
 import getpass
-import sys
 import os
 import ssl
 import argparse
@@ -25,7 +26,10 @@ import datetime
 
 debug = False
 
-ssl._create_default_https_context = ssl._create_unverified_context
+if hasattr(ssl, '_create_unverified_context'):
+    ssl._create_default_https_context = ssl._create_unverified_context
+elif hasattr(ssl,'_create_stdlib_context'):
+    ssl._create_default_https_context = ssl._create_stdlib_context
 
 """
 OATH code from https://github.com/bdauvergne/python-oath
@@ -101,6 +105,7 @@ class juniper_vpn(object):
                 args.certs = [n.strip() for n in args.certs.split(',')]
             args.certs = certs
 
+        # RobustFactory can't cope with html errors present on juniper!
         self.br = mechanize.Browser()
 
         self.cj = cookielib.LWPCookieJar()
@@ -117,7 +122,10 @@ class juniper_vpn(object):
                               max_time=1)
 
         # Want debugging messages?
-        if debug:
+        if self.args.debug:
+            logger = logging.getLogger("mechanize")
+            logger.addHandler(logging.StreamHandler(sys.stdout))
+            logger.setLevel(logging.DEBUG)
             self.br.set_debug_http(True)
             self.br.set_debug_redirects(True)
             self.br.set_debug_responses(True)
@@ -169,6 +177,18 @@ class juniper_vpn(object):
             elif action == 'key':
                 self.action_key()
             elif action == 'continue':
+                # Say what? The Juniper VPN has HTML syntax errors that keep the mechanize 
+                # parser from being able to properly parse the html
+                # So we pull the HTML, fix the one critical error, 
+                # and recreate the request
+                update_response=self.br.response()
+                html = update_response.get_data().replace('<td><input id="postfixSID_1" type="checkbox" onclick="checkSelected()",  name="postfixSID"', 
+                                                          '<td><input id="postfixSID_1" type="checkbox" onclick="checkSelected()"  name="postfixSID"')
+                headers=re.findall(r"(?P<name>.*?): (?P<value>.*?)\r\n", 
+                                   str(update_response.info()))
+                response = mechanize.make_response(html, headers,update_response.geturl(), 
+                                                   update_response.code,update_response.msg)
+                self.br.set_response(response)
                 self.action_continue()
             elif action == 'connect':
                 self.action_connect()
@@ -245,9 +265,24 @@ class juniper_vpn(object):
         self.r = self.br.submit()
 
     def action_continue(self):
-        # Yes, I want to terminate the existing connection
-        self.br.select_form(nr=0)
-        self.r = self.br.submit()
+	# this could be select_form(name='frmConfirmation')
+	self.br.select_form(nr=0)
+	if self.args.terminate:
+	    # Yes, I want to terminate the existing connection
+	    print "Terminating existing session!"
+	    # sometimes only one connection can be active at a time,
+	    # force log out other sessions. Find the checkbox, click it
+	    # then remove the disable from the submit button
+	    check_box_control=self.br.find_control(name='postfixSID')
+	    close_selected_session=self.br.find_control(name='btnContinue')
+	    # flip the selection on
+	    check_box_control.items[0].selected=True
+	    # remove disabled from close sessions (javascript normally does this)
+	    close_selected_session.disabled=False
+	    # now submit correct button
+	    self.r = self.br.submit(name='btnContinue')
+	else:
+	    self.r = self.br.submit()
 
     def action_connect(self):
         now = time.time()
@@ -311,6 +346,10 @@ if __name__ == "__main__":
                         help="Comma separated list of pem formatted certificates for funk response")
     parser.add_argument('-U', '--user-agent', type=str,
                         help="User agent string")
+    parser.add_argument('-g', '--debug', action='store_true',
+                        help='enable http debug')
+    parser.add_argument('-t', '--terminate', action='store_true',
+                        help='terminate existing connections')
     parser.add_argument('action', nargs=argparse.REMAINDER,
                         metavar='<action> [<args...>]',
                         help='External command')
