@@ -381,7 +381,6 @@ if __name__ == "__main__":
                         help='External command')
 
     args = parser.parse_args()
-    args.__dict__['username'] = None
     args.__dict__['password'] = None
 
     if len(args.action) and args.action[0] == '--':
