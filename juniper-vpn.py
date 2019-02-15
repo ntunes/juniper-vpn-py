@@ -141,7 +141,8 @@ class juniper_vpn(object):
         self.needs_2factor = False
         self.key = None
         self.child = None
-        self.pass_postfix = None
+        self.pass_prefix = None
+        self.secondary_password = None
 
     def find_cookie(self, name):
         for cookie in self.cj:
@@ -223,18 +224,44 @@ class juniper_vpn(object):
         # we could be sitting on the two factor key prompt later on waiting
         # on the user.
 
-        # Enter username/password
-        if self.args.username is None:
-            self.args.username = raw_input('Username: ')
-        if self.args.password is None or self.last_action == 'login':
-            if self.fixed_password:
-                print 'Login failed (Invalid username or password?)'
-                sys.exit(1)
-            else:
-                self.args.password = getpass.getpass('Password: ')
-                self.needs_2factor = False
-        if self.args.pass_prefix:
-            self.pass_postfix = getpass.getpass("Secondary password postfix:")
+        self.br.select_form(nr=0)
+
+        # Enter username if required
+        try:
+            self.br.form.find_control('username')
+            if self.args.username is None:
+                self.args.username = raw_input('Username: ')
+            self.br.form['username'] = self.args.username
+        except mechanize.ControlNotFoundError:
+            pass
+
+        # Enter password if required
+        try:
+            self.br.form.find_control('password')
+            if self.args.password is None or self.last_action == 'login':
+                if self.fixed_password:
+                    print 'Login failed (Invalid username or password?)'
+                    sys.exit(1)
+                else:
+                    self.args.password = getpass.getpass('Password: ')
+                    self.needs_2factor = False
+            self.br.form['password'] = self.args.password
+        except mechanize.ControlNotFoundError:
+            pass
+
+        # Enter secondary password if required
+        try:
+            self.br.form.find_control('password#2')
+            if self.secondary_password is None:
+                self.secondary_password = getpass.getpass("Secondary password:")
+
+            if self.pass_prefix:
+                self.secondary_password = "".join([  self.args.pass_prefix,
+                                                     self.secondary_password])
+            self.br.form['password#2'] = self.secondary_password
+        except mechanize.ControlNotFoundError:
+            pass
+
         if self.needs_2factor:
             if self.args.oath:
                 self.key = hotp(self.args.oath)
@@ -243,19 +270,14 @@ class juniper_vpn(object):
         else:
             self.key = None
 
-        self.br.select_form(nr=0)
-        self.br.form['username'] = self.args.username
-        self.br.form['password'] = self.args.password
-        if self.args.pass_prefix:
-            if self.pass_postfix:
-                secondary_password = "".join([  self.args.pass_prefix,
-                                                self.pass_postfix])
-            else:
-                print 'Secondary password postfix not provided'
-                sys.exit(1)
-            self.br.form['password#2'] = secondary_password
-        if self.args.realm:
-            self.br.form['realm'] = [self.args.realm]
+        # Enter realm if required
+        try:
+            self.br.form.find_control('realm')
+            if self.args.realm:
+                self.br.form['realm'] = [self.args.realm]
+        except mechanize.ControlNotFoundError:
+            pass
+
         self.r = self.br.submit()
 
     def action_key(self):
