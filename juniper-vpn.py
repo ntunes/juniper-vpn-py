@@ -299,21 +299,24 @@ class juniper_vpn(object):
 	# this could be select_form(name='frmConfirmation')
 	self.br.select_form(nr=0)
 	if self.args.terminate:
-	    # Yes, I want to terminate the existing connection
-	    print "Terminating existing session!"
-	    # sometimes only one connection can be active at a time,
-	    # force log out other sessions. Find the checkbox, click it
-	    # then remove the disable from the submit button
-	    check_box_control=self.br.find_control(name='postfixSID')
-	    close_selected_session=self.br.find_control(name='btnContinue')
-	    # flip the selection on
-	    check_box_control.items[0].selected=True
-	    # remove disabled from close sessions (javascript normally does this)
-	    close_selected_session.disabled=False
-	    # now submit correct button
-	    self.r = self.br.submit(name='btnContinue')
+            try:
+                # Yes, I want to terminate the existing connection.
+                # Sometimes only one connection can be active at a time,
+                # force log out other sessions. Find the checkbox, click it
+                # then remove the disable from the submit button.
+                check_box_control=self.br.find_control(name='postfixSID')
+                close_selected_session=self.br.find_control(name='btnContinue')
+                # flip the selection on
+                check_box_control.items[0].selected=True
+                # remove disabled from close sessions (javascript normally does this)
+                close_selected_session.disabled=False
+                # now submit correct button
+                self.r = self.br.submit(name='btnContinue')
+                print "Terminating existing session!"
+            except mechanize.ControlNotFoundError:
+                self.br.submit()
 	else:
-	    self.r = self.br.submit()
+            self.r = self.br.submit()
 
     def action_connect(self):
         now = time.time()
